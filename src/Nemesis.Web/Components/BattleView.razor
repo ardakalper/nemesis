@@ -1,0 +1,598 @@
+@* The fight: an inked board, the team's controls, and a strip of captions that replays what just happened. *@
+@inject GameState G
+@implements IDisposable
+
+<div class="battle" tabindex="0" @onkeydown="Key" @ref="root">
+    <header class="battle-head">
+        <div class="issue-tag">#@plan.Number</div>
+        <div class="battle-title">
+            <h2>@plan.Title</h2>
+            <span>@B.Place.Name · round @Math.Min(B.Round, Battle.MaxRounds) of @Battle.MaxRounds</span>
+        </div>
+        <div class="battle-buttons">
+            <button class="btn ghost" @onclick="Auto" disabled="@(!PlayerTurn)" title="Let the team fight this round on their own">Auto</button>
+            <button class="btn primary" @onclick="EndTurn" disabled="@(!PlayerTurn)" title="End the heroes' turn (E)">End turn</button>
+        </div>
+    </header>
+
+    <div class="battle-body">
+        <div class="board-wrap">
+            <div class="board" @onclick="SkipPlayback">
+                <svg viewBox="0 0 @(Battle.W * T) @(Battle.H * T)" class="board-svg">
+                    @for (int x = 0; x < Battle.W; x++)
+                    {
+                        for (int y = 0; y < Battle.H; y++)
+                        {
+                            var p = new Pos(x, y);
+                            var kind = TileAt(p);
+                            <g transform="translate(@(x * T) @(y * T))">
+                                <rect width="@T" height="@T" fill="@B.Place.Floor" />
+                                <rect width="@T" height="@T" fill="url(#ht-dots)" opacity=".18" />
+                                @if (kind == TileKind.Wall)
+                                {
+                                    <rect width="@T" height="@T" fill="#3b3f4a" />
+                                    <path d="M0 16 H64 M0 32 H64 M0 48 H64 M20 0 V16 M44 16 V32 M20 32 V48 M44 48 V64" stroke="#5b6170" stroke-width="2" />
+                                }
+                                else if (kind == TileKind.Cover)
+                                {
+                                    <rect x="9" y="11" width="46" height="44" fill="#a08a5e" stroke="#111" stroke-width="3" />
+                                    <path d="M9 11 L55 55 M55 11 L9 55" stroke="#111" stroke-width="2" opacity=".6" />
+                                    <rect x="9" y="11" width="46" height="8" fill="#111" opacity=".18" />
+                                }
+                                else if (kind == TileKind.Barrel)
+                                {
+                                    <rect x="17" y="10" width="30" height="46" rx="6" fill="#e2231a" stroke="#111" stroke-width="3" />
+                                    <path d="M17 22 H47 M17 44 H47" stroke="#111" stroke-width="2.5" />
+                                    <path d="M32 26 L39 39 L25 39 Z" fill="#ffde17" stroke="#111" stroke-width="1.5" />
+                                }
+                                <rect width="@T" height="@T" fill="none" stroke="#111" stroke-opacity=".28" stroke-width="1.5" />
+                            </g>
+                        }
+                    }
+
+                    @foreach (var p in Reach)
+                    {
+                        <rect x="@(p.X * T + 3)" y="@(p.Y * T + 3)" width="@(T - 6)" height="@(T - 6)" class="hl-move" />
+                    }
+                    @foreach (var p in AimTargets)
+                    {
+                        <rect x="@(p.X * T + 3)" y="@(p.Y * T + 3)" width="@(T - 6)" height="@(T - 6)" class="hl-target" />
+                    }
+                    @foreach (var p in AreaPreview)
+                    {
+                        <rect x="@(p.X * T + 6)" y="@(p.Y * T + 6)" width="@(T - 12)" height="@(T - 12)" class="hl-area" />
+                    }
+
+                    @foreach (var u in B.Units)
+                    {
+                        var g = View(u);
+                        if (g == null || g.Out) continue;
+                        var side = u.Side == Side.Heroes ? "hero" : "villain";
+                        <g class="token @side @(u.IsBoss ? "boss" : "") @(Selected == u ? "selected" : "") @(Spent(u) ? "spent" : "") @(flash.Contains(u.Id) ? "flash" : "")"
+                           style="transform: translate(@(g.Pos.X * T)px, @(g.Pos.Y * T)px)">
+                            <rect x="4" y="3" width="56" height="58" rx="9" class="token-bg" />
+                            <Figure Look="u.Look" Villain="@(u.Side == Side.Villains)" Hench="u.IsHench" Turret="u.IsTurret" Scars="@(u.Villain?.Scars.Count ?? 0)" x="6" y="2" width="52" height="52" />
+                            <rect x="7" y="52" width="50" height="7" fill="#111" />
+                            <rect x="8" y="53" width="@(Math.Max(0, 48.0 * g.Hp / Math.Max(1, u.MaxHp)).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))" height="5" class="hp-fill" />
+                            @{ int bx = 4; }
+                            @if (u.Shield > 0) { <g transform="translate(@bx 0)"><circle cx="6" cy="6" r="7" fill="#1c5bb8" stroke="#111" stroke-width="2" /><text x="6" y="10" class="badge">@u.Shield</text></g> bx += 13; }
+                            @if (u.Stun > 0 || u.StunnedNow) { <g transform="translate(@bx 0)"><circle cx="6" cy="6" r="7" fill="#ffde17" stroke="#111" stroke-width="2" /><text x="6" y="10" class="badge dark">Z</text></g> bx += 13; }
+                            @if (u.Burn > 0) { <g transform="translate(@bx 0)"><circle cx="6" cy="6" r="7" fill="#e2231a" stroke="#111" stroke-width="2" /><text x="6" y="10" class="badge">@u.Burn</text></g> bx += 13; }
+                            @if (u.Mark > 0) { <g transform="translate(@bx 0)"><circle cx="6" cy="6" r="7" fill="#e6007e" stroke="#111" stroke-width="2" /><text x="6" y="10" class="badge">T</text></g> }
+                            @if (u.IsBoss)
+                            {
+                                <path d="@Cover.Burst(56, 7, 8, 4, 5)" fill="#ffde17" stroke="#111" stroke-width="1.5" />
+                                if (Running(u))
+                                {
+                                    <g class="flee"><rect x="10" y="-14" width="44" height="14" rx="3" fill="#e6007e" stroke="#111" stroke-width="2" /><text x="32" y="-3" class="badge">FLEEING</text></g>
+                                }
+                            }
+                            @if (u.Side == Side.Heroes && !u.IsTurret && u.Momentum > 0)
+                            {
+                                for (int i = 0; i < u.Momentum; i++)
+                                {
+                                    <rect x="@(60 - (i + 1) * 7)" y="44" width="5" height="6" fill="#ffde17" stroke="#111" stroke-width="1" />
+                                }
+                            }
+                        </g>
+                    }
+
+                    @foreach (var (p, text, good) in Previews)
+                    {
+                        <g transform="translate(@(p.X * T + 32) @(p.Y * T + 30))" class="preview">
+                            <rect x="-20" y="-13" width="40" height="22" rx="4" fill="@(good ? "#7cc242" : "#fff")" stroke="#111" stroke-width="2.5" />
+                            <text x="0" y="4" text-anchor="middle">@text</text>
+                        </g>
+                    }
+
+                    @for (int x = 0; x < Battle.W; x++)
+                    {
+                        for (int y = 0; y < Battle.H; y++)
+                        {
+                            var p = new Pos(x, y);
+                            <rect x="@(x * T)" y="@(y * T)" width="@T" height="@T" fill="transparent" class="cell"
+                                  @onclick="() => Click(p)" @onmouseover="() => Hover(p)" @onclick:stopPropagation="@(!busy)" />
+                        }
+                    }
+                </svg>
+
+                @foreach (var f in fx)
+                {
+                    <div class="fx @f.Kind @(f.Kind == "bubble" && f.Y < 2 ? "below" : "")" style="left:@(Pct(f.X, Battle.W)); top:@(Pct(f.Y, Battle.H)); --tilt:@(f.Tilt)deg; --bx:@(f.X < 2 ? "-18%" : f.X > Battle.W - 2 ? "-82%" : "-50%")" @key="f.Id">
+                        @if (f.Kind == "bubble")
+                        {
+                            <span class="bubble-who">@f.Who</span>
+                        }
+                        @f.Text
+                    </div>
+                }
+
+                @if (B.Over && !busy)
+                {
+                    var (word, col) = Cover.Stamp(B.Result == BattleResult.Captured ? "captured" : B.Result == BattleResult.Escaped ? "escaped" : "defeat");
+                    <div class="end-stamp" style="--stamp:@col">
+                        <div class="stamp-word">@word</div>
+                        <button class="btn primary big" @onclick="Finish" @onclick:stopPropagation="true">Read the aftermath →</button>
+                    </div>
+                }
+            </div>
+
+            <div class="team-bar">
+                @foreach (var h in B.Heroes)
+                {
+                    var g = View(h);
+                    <button class="team-card @(Selected == h ? "on" : "") @(h.Out ? "down" : "") @(Spent(h) ? "spent" : "")" @onclick="() => Select(h)" disabled="@(h.Out)">
+                        <Figure Look="h.Look" class="mini" />
+                        <span class="tc-name">@h.Name</span>
+                        <span class="tc-hp"><i style="width:@(Pct(g?.Hp ?? h.Hp, h.MaxHp))"></i></span>
+                        <span class="tc-meta">@(h.Out ? "DOWN" : $"{(g?.Hp ?? h.Hp)}/{h.MaxHp}") @(h.StunnedNow && !h.Out ? "· stunned" : "")</span>
+                        <span class="tc-mom">@for (int i = 0; i < Content.MaxMomentum; i++) { <b class="@(i < h.Momentum ? "on" : "")"></b> }</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <aside class="battle-side">
+            @if (Selected != null && !Selected.Out && !busy && PlayerTurn)
+            {
+                var s = Selected;
+                <section class="panel powers">
+                    <h3>@s.Name <small>@Content.Archetypes[s.Archetype].Name · @(s.CanMove ? $"move {s.Move}" : "moved")</small></h3>
+                    @if (s.StunnedNow)
+                    {
+                        <p class="hint">Stunned. Can't do anything this round.</p>
+                    }
+                    @foreach (var ps in s.Powers)
+                    {
+                        var ready = B.Usable(s, ps);
+                        var why = s.Acted ? "already acted" : ps.Cooldown > 0 ? $"ready in {ps.Cooldown}" : ps.Def.Signature && s.Momentum < Content.Signature ? $"needs {Content.Signature} momentum" : null;
+                        <button class="power @(ps.Def.Signature ? "sig" : "") @(aim == ps.Def.Id ? "on" : "")" disabled="@(!ready)" @onclick="() => Aim(ps)">
+                            <span class="p-name">@ps.Def.Name @if (ps.Def.Signature) { <em>SIGNATURE</em> }</span>
+                            <span class="p-text">@ps.Def.Text</span>
+                            <span class="p-stats">@Narration.Describe(ps.Def, s)@(why != null ? $" — {why}" : "")</span>
+                        </button>
+                    }
+                    @foreach (var partner in B.Heroes.Where(o => B.CanTeamUp(s, o)))
+                    {
+                        <button class="power teamup @(teamWith == partner.Id ? "on" : "")" @onclick="() => AimTeamUp(partner)">
+                            <span class="p-name">Team-up: @Battle.TeamUpName(s, partner) <em>with @partner.Name</em></span>
+                            <span class="p-text">@TeamUpText(Battle.TeamUpName(s, partner))</span>
+                            <span class="p-stats">uses both heroes' action · +1 momentum each</span>
+                        </button>
+                    }
+                    @if (aim != null || teamWith != null)
+                    {
+                        <p class="hint">@(AimTargets.Count == 0 ? "No targets in reach. Move closer, or pick something else." : "Pick a highlighted target.") <a href="" @onclick="Cancel" @onclick:preventDefault="true">Cancel</a></p>
+                    }
+                    else if (s.CanMove)
+                    {
+                        <p class="hint">Blue squares: where @s.Name can move. Moving and acting can happen in either order.</p>
+                    }
+                </section>
+            }
+            else if (PlayerTurn && !busy)
+            {
+                <section class="panel powers">
+                    <p class="hint">Pick a hero on the board or below. When everyone's done, hit <b>End turn</b>.</p>
+                </section>
+            }
+            @if (inspect != null && inspect.Alive)
+            {
+                <section class="panel inspect">
+                    <h3>@(inspect.Villain?.FullName ?? inspect.Name)</h3>
+                    <p class="i-hp">@inspect.Hp/@inspect.MaxHp health @(inspect.Armor > 0 ? $"· armour {inspect.Armor}" : "") @(inspect.Mark > 0 ? "· tagged" : "")</p>
+                    @if (inspect.Villain != null)
+                    {
+                        @foreach (var t in inspect.Villain.Traits)
+                        {
+                            <div class="trait"><b>@Content.Traits[t].Name</b> @Content.Traits[t].Text</div>
+                        }
+                        @if (inspect.GrudgeHeroId != null)
+                        {
+                            <div class="trait grudge"><b>Grudge</b> Hits @GameState.HeroName(inspect.GrudgeHeroId) for 2 more.</div>
+                        }
+                        <p class="hint">Bosses at 30% health or less try to run. A stunned or tagged boss can't.</p>
+                    }
+                    @foreach (var ps in inspect.Powers)
+                    {
+                        <div class="trait"><b>@ps.Def.Name</b> @Narration.Describe(ps.Def, inspect)</div>
+                    }
+                </section>
+            }
+            <section class="panel log">
+                @foreach (var c in captions.AsEnumerable().Reverse().Take(60))
+                {
+                    <div class="cap @c.Kind" @key="c.Id">
+                        @if (c.Kind == "taunt")
+                        {
+                            <b>@c.Who</b> @c.Text
+                        }
+                        else
+                        {
+                            @c.Text
+                        }
+                    </div>
+                }
+            </section>
+        </aside>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Battle B { get; set; }
+
+    const int T = 64;
+    ElementReference root;
+
+    class Ghost { public Pos Pos; public int Hp; public bool Out; }
+    class Fx { public int Id; public string Kind, Text, Who; public double X, Y; public int Tilt; }
+    class Caption { public int Id; public string Kind, Text, Who; }
+
+    Dictionary<int, Ghost> ghosts;          // what the board shows while a turn is replayed
+    HashSet<Pos> barrels;
+    readonly List<Fx> fx = new List<Fx>();
+    readonly List<Caption> captions = new List<Caption>();
+    readonly HashSet<int> flash = new HashSet<int>();
+    int seen, nextId;
+    bool busy, skip, disposed;
+
+    int? selectedId;
+    string aim;
+    int? teamWith;
+    Pos? hover;
+    Unit inspect;
+
+    Unit Selected => selectedId == null ? null : B.Get(selectedId.Value);
+    bool PlayerTurn => !B.Over && B.Turn == Side.Heroes && !busy;
+
+    IssuePlan plan;
+
+    protected override async Task OnInitializedAsync()
+    {
+        plan = G.S.Next;
+        // the opening narration, then the first hero who can act
+        Snap();
+        seen = 0;
+        captions.Add(new Caption { Id = nextId++, Kind = "place", Text = $"Meanwhile, at {B.Place.Name}…" });
+        var boss = B.Bosses.FirstOrDefault();
+        if (boss != null) captions.Add(new Caption { Id = nextId++, Kind = "taunt", Who = boss.Name, Text = $"“{plan.Intro}”" });
+        await Play();
+        SelectNext();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) { try { await root.FocusAsync(); } catch { } }
+    }
+
+    public void Dispose() => disposed = true;
+
+    // ---------- what the board shows ----------
+    Ghost View(Unit u)
+    {
+        if (ghosts == null) return new Ghost { Pos = u.Pos, Hp = u.Hp, Out = u.Out };
+        return ghosts.TryGetValue(u.Id, out var g) ? g : null;
+    }
+
+    TileKind TileAt(Pos p)
+    {
+        var k = B.Tile(p);
+        if (barrels != null && barrels.Contains(p)) return TileKind.Barrel;
+        return k;
+    }
+
+    bool Spent(Unit u) => u.Side == Side.Heroes && !u.IsTurret && !u.Out && B.Turn == Side.Heroes && !u.CanAct && !u.CanMove;
+    bool Running(Unit u) => u.IsBoss && !u.Out && u.Hp <= u.MaxHp * 0.3 && u.Mark == 0 && u.Stun == 0;
+
+    IEnumerable<Pos> Reach => Selected != null && aim == null && teamWith == null && PlayerTurn && Selected.CanMove
+        ? B.Reachable(Selected).Keys.Where(p => p != Selected.Pos) : Enumerable.Empty<Pos>();
+
+    List<Pos> AimTargets
+    {
+        get
+        {
+            if (!PlayerTurn || Selected == null) return new List<Pos>();
+            if (aim != null) { var ps = Selected.PowerById(aim); return ps == null ? new List<Pos>() : B.Targets(Selected, ps); }
+            if (teamWith != null) return B.TeamUpTargets(Selected, B.Get(teamWith.Value));
+            return new List<Pos>();
+        }
+    }
+
+    Pos? AimCenter
+    {
+        get
+        {
+            if (aim == null || Selected == null) return null;
+            var p = Selected.PowerById(aim).Def;
+            if (p.Target == Targeting.Self) return Selected.Pos;
+            return hover != null && AimTargets.Contains(hover.Value) ? hover : null;
+        }
+    }
+
+    IEnumerable<Pos> AreaPreview
+    {
+        get
+        {
+            var c = AimCenter;
+            if (c == null) yield break;
+            var p = Selected.PowerById(aim).Def;
+            if (p.Area <= 0) yield break;
+            for (int x = 0; x < Battle.W; x++) for (int y = 0; y < Battle.H; y++)
+                { var q = new Pos(x, y); if (q.Dist(c.Value) <= p.Area && q != Selected.Pos) yield return q; }
+        }
+    }
+
+    IEnumerable<(Pos, string, bool)> Previews
+    {
+        get
+        {
+            if (!PlayerTurn || Selected == null) yield break;
+            if (teamWith != null && hover != null && AimTargets.Contains(hover.Value))
+            {
+                var t = B.UnitAt(hover.Value);
+                if (t != null) yield return (t.Pos, $"−{B.TeamUpDamage(Selected, B.Get(teamWith.Value), t)}", false);
+                yield break;
+            }
+            var c = AimCenter;
+            if (c == null) yield break;
+            var p = Selected.PowerById(aim).Def;
+            foreach (var t in B.Affected(Selected, p, c.Value, Selected.Pos))
+            {
+                if (t.Side == Selected.Side)
+                {
+                    var bits = new List<string>();
+                    if (p.Heal > 0) bits.Add($"+{p.Heal}");
+                    if (p.Shield > 0) bits.Add($"⛨{p.Shield}");
+                    if (bits.Count > 0) yield return (t.Pos, string.Join(" ", bits), true);
+                }
+                else if (p.Damage > 0) yield return (t.Pos, $"−{B.DamageOf(Selected, p, t, Selected.Pos, p.Area > 0) * p.Hits}", false);
+            }
+        }
+    }
+
+    static string Pct(double v, double of) => (100.0 * v / of).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    static string TeamUpText(string name) => name switch
+    {
+        "Human Cannonball" => "The brick throws the speedster at a foe. Big damage.",
+        "Blinding Flash" => "Light and a thought at once: damage and a stun.",
+        "Tag and Bag" => "Hit them and tag them, so they can't run.",
+        "Guardian Strike" => "Strike together and both of you get a shield.",
+        _ => "Hit one foe together, harder than either alone.",
+    };
+
+    // ---------- input ----------
+    void Hover(Pos p) { if (hover != p) hover = p; }
+
+    void SkipPlayback() { if (busy) skip = true; }
+
+    void Select(Unit u)
+    {
+        if (u.Out || u.Side != Side.Heroes || u.IsTurret) return;
+        selectedId = u.Id; aim = null; teamWith = null;
+    }
+
+    void Aim(PowerState ps) { aim = aim == ps.Def.Id ? null : ps.Def.Id; teamWith = null; }
+    void AimTeamUp(Unit partner) { teamWith = teamWith == partner.Id ? null : partner.Id; aim = null; }
+    void Cancel() { aim = null; teamWith = null; }
+
+    async Task Click(Pos p)
+    {
+        if (busy) { skip = true; return; }
+        if (!PlayerTurn) return;
+        var u = B.UnitAt(p);
+        var s = Selected;
+        if (s != null && aim != null)
+        {
+            if (AimTargets.Contains(p)) { var id = aim; aim = null; await Do(() => B.UsePower(s, id, p)); return; }
+            Cancel();
+            if (u != null && u.Side == Side.Heroes && !u.IsTurret) Select(u);
+            else if (u != null) inspect = u;
+            return;
+        }
+        if (s != null && teamWith != null)
+        {
+            if (AimTargets.Contains(p)) { var partner = B.Get(teamWith.Value); teamWith = null; await Do(() => B.TeamUp(s, partner, p)); return; }
+            Cancel();
+            return;
+        }
+        if (u != null && u.Side == Side.Heroes && !u.IsTurret) { Select(u); return; }
+        if (s != null && s.CanMove && B.Reachable(s).ContainsKey(p) && p != s.Pos) { await Do(() => B.MoveUnit(s, p)); return; }
+        if (u != null) { inspect = u; return; }
+        selectedId = null;
+    }
+
+    async Task Key(KeyboardEventArgs e)
+    {
+        if (busy) { skip = true; return; }
+        if (e.Key == "Escape") { Cancel(); return; }
+        if (!PlayerTurn) return;
+        if (e.Key == "e" || e.Key == "E") { await EndTurn(); return; }
+        if (Selected != null && e.Key.Length == 1 && e.Key[0] >= '1' && e.Key[0] <= '3')
+        {
+            int i = e.Key[0] - '1';
+            if (i < Selected.Powers.Count && B.Usable(Selected, Selected.Powers[i])) Aim(Selected.Powers[i]);
+        }
+        if (e.Key == "Tab") SelectNext();
+    }
+
+    async Task Do(Func<bool> action)
+    {
+        Snap();
+        if (!action()) { ghosts = null; barrels = null; return; }
+        await Play();
+        if (Selected == null || Selected.Out || (!Selected.CanAct && !Selected.CanMove)) SelectNext();
+    }
+
+    async Task EndTurn()
+    {
+        if (!PlayerTurn) return;
+        Cancel();
+        Snap();
+        B.EndHeroTurn();
+        await Play();
+        SelectNext();
+    }
+
+    async Task Auto()
+    {
+        if (!PlayerTurn) return;
+        Cancel();
+        Snap();
+        B.AutoHeroTurn();
+        await Play();
+        SelectNext();
+    }
+
+    void SelectNext()
+    {
+        var next = B.Heroes.Where(h => h.Alive && (h.CanAct || h.CanMove) && !h.StunnedNow).OrderBy(h => h.Id).FirstOrDefault();
+        selectedId = next?.Id;
+        aim = null; teamWith = null;
+    }
+
+    async Task Finish() => await G.FinishFight();
+
+    // ---------- replay ----------
+    void Snap()
+    {
+        ghosts = B.Units.ToDictionary(u => u.Id, u => new Ghost { Pos = u.Pos, Hp = u.Hp, Out = u.Out });
+        barrels = new HashSet<Pos>();
+        for (int x = 0; x < Battle.W; x++) for (int y = 0; y < Battle.H; y++) if (B.Tiles[x, y] == TileKind.Barrel) barrels.Add(new Pos(x, y));
+        seen = B.Log.Count;
+    }
+
+    async Task Play()
+    {
+        busy = true; skip = false;
+        var events = B.Log.Skip(seen).ToList();
+        seen = B.Log.Count;
+        foreach (var e in events)
+        {
+            if (disposed) return;
+            int wait = Apply(e);
+            var text = Narration.Caption(B, e);
+            if (text != null)
+            {
+                var who = e.Kind == "taunt" ? B.Get(e.Actor)?.Name : null;
+                captions.Add(new Caption { Id = nextId++, Kind = e.Kind, Text = e.Kind == "taunt" ? $"“{e.Text}”" : text, Who = who });
+                if (captions.Count > 200) captions.RemoveRange(0, captions.Count - 200);
+            }
+            if (!skip && wait > 0) { StateHasChanged(); await Task.Delay(wait); }
+            flash.Clear();
+        }
+        ghosts = null; barrels = null;
+        busy = false; skip = false;
+        StateHasChanged();
+        _ = ClearFxLater();
+    }
+
+    async Task ClearFxLater()
+    {
+        await Task.Delay(1400);
+        if (disposed || busy) return;
+        fx.Clear();
+        StateHasChanged();
+    }
+
+    Pos At(int id) => ghosts != null && ghosts.TryGetValue(id, out var g) ? g.Pos : B.Get(id)?.Pos ?? new Pos(0, 0);
+
+    void Burst(Pos p, string text, string kind = "sfx", string who = null)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        fx.RemoveAll(f => f.Kind == kind && Math.Abs(f.X - p.X - 0.5) < 0.01 && Math.Abs(f.Y - p.Y - 0.5) < 0.01);
+        fx.Add(new Fx { Id = nextId++, Kind = kind, Text = text, Who = who, X = p.X + 0.5, Y = p.Y + 0.5, Tilt = (nextId * 7) % 17 - 8 });
+        if (fx.Count > 8) fx.RemoveAt(0);
+    }
+
+    /// <summary>Applies one event to what the board shows; returns how long to linger on it.</summary>
+    int Apply(BattleEvent e)
+    {
+        Ghost Gh(int id) => ghosts != null && ghosts.TryGetValue(id, out var g) ? g : null;
+        switch (e.Kind)
+        {
+            case "move":
+                if (Gh(e.Actor) != null) Gh(e.Actor).Pos = e.To;
+                return 230;
+            case "knockback":
+                if (Gh(e.Target) != null) Gh(e.Target).Pos = e.To;
+                return 200;
+            case "power":
+            {
+                var p = Content.Powers.TryGetValue(e.Power ?? "", out var def) ? def : null;
+                Burst(p != null && p.Target == Targeting.Self ? At(e.Actor) : e.To, e.Sfx);
+                return 260;
+            }
+            case "teamup":
+                Burst(e.To, e.Sfx);
+                return 300;
+            case "hit":
+                if (Gh(e.Target) != null) Gh(e.Target).Hp = Math.Max(0, Gh(e.Target).Hp - e.Amount);
+                flash.Add(e.Target);
+                Burst(At(e.Target), $"−{e.Amount}", "num");
+                if (e.Actor < 0) Burst(At(e.Target), e.Sfx);
+                return 240;
+            case "heal":
+                if (Gh(e.Target) != null) Gh(e.Target).Hp += e.Amount;
+                Burst(At(e.Target), $"+{e.Amount}", "num heal");
+                return 200;
+            case "shield":
+                Burst(At(e.Target), "SHIELD", "num heal");
+                return 120;
+            case "ko":
+                if (Gh(e.Target) != null) Gh(e.Target).Out = true;
+                Burst(At(e.Target), "KO!", "sfx ko");
+                return 360;
+            case "escape":
+                if (Gh(e.Actor) != null) Gh(e.Actor).Out = true;
+                Burst(At(e.Actor), e.Sfx ?? "POOF!", "sfx ko");
+                return 600;
+            case "surrender":
+                if (Gh(e.Actor) != null) Gh(e.Actor).Out = true;
+                return 120;
+            case "summon":
+                if (ghosts != null) { var t = B.Get(e.Target); ghosts[e.Target] = new Ghost { Pos = e.To, Hp = t?.MaxHp ?? 1 }; }
+                Burst(e.To, B.Get(e.Target)?.IsTurret == true ? "KLIK!" : "HEY!", "sfx");
+                return 260;
+            case "explode":
+                barrels?.Remove(e.To);
+                Burst(e.To, e.Sfx, "sfx boom");
+                return 380;
+            case "stun":
+                Burst(At(e.Target), "STUNNED", "num stun");
+                return 160;
+            case "taunt":
+                Burst(At(e.Actor), e.Text, "bubble", B.Get(e.Actor)?.Name);
+                return 1100;
+            case "escape-fail":
+                Burst(At(e.Actor), "NO WAY OUT!", "num stun");
+                return 500;
+            case "turn":
+                return 250;
+            case "end":
+                return 300;
+            default:
+                return 140;
+        }
+    }
+}

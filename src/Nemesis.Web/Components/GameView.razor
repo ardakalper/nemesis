@@ -1,0 +1,343 @@
+@* Every screen of the game. One page and a state machine: no routes, so it works from any static host. *@
+@inject GameState G
+@inject IJSRuntime JS
+@implements IDisposable
+
+@if (!G.Loaded)
+{
+    <div class="loading">PRINTING…</div>
+    return;
+}
+
+<div class="app screen-@G.Screen.ToString().ToLowerInvariant()">
+@switch (G.Screen)
+{
+    case Screen.Title:
+        <section class="title-screen">
+            <h1 class="masthead">NEMESIS</h1>
+            <p class="lede">A superhero tactics game told as a comic series. The villains you fail to stop come back stronger, and they remember you.</p>
+            <div class="rogue-strip">
+                @foreach (var v in TitleRogues)
+                {
+                    <div class="rogue"><Figure Look="v.Look" Villain="true" Scars="v.Scars.Count" /><span>@v.Name</span></div>
+                }
+            </div>
+            <nav class="menu">
+                @if (G.CanContinue)
+                {
+                    <button class="btn primary big" @onclick="G.Continue">Continue: @G.S.TeamName, issue #@Math.Min(G.S.Issue, Campaign.IssuesPerSeries)</button>
+                }
+                <button class="btn @(G.CanContinue ? "" : "primary big")" @onclick="() => G.Go(Screen.NewSeries)">@(G.U.SeriesPlayed == 0 ? "Start the first series" : "Start a new series")</button>
+                <button class="btn" @onclick="() => G.Go(Screen.Gallery)" disabled="@(G.U.Gallery.Count == 0)">Rogues gallery (@G.U.Gallery.Count)</button>
+                <button class="btn" @onclick="() => G.Go(Screen.Covers)" disabled="@(G.U.Covers.Count == 0)">Covers (@G.U.Covers.Count)</button>
+                <button class="btn ghost" @onclick="() => G.Go(Screen.Help)">How to play</button>
+            </nav>
+            @if (G.U.SeriesPlayed > 0)
+            {
+                <p class="small">Series played: @G.U.SeriesPlayed · best score: @G.U.BestScore ·
+                    @if (confirmWipe)
+                    {
+                        <span>Erase every villain and cover? <a href="" @onclick="G.Wipe" @onclick:preventDefault="true">Yes, erase</a> · <a href="" @onclick="() => confirmWipe = false" @onclick:preventDefault="true">No</a></span>
+                    }
+                    else
+                    {
+                        <a href="" @onclick="() => confirmWipe = true" @onclick:preventDefault="true">erase save</a>
+                    }
+                </p>
+            }
+        </section>
+        break;
+
+    case Screen.NewSeries:
+        <section class="page narrow">
+            <h2 class="page-title">A new series</h2>
+            <div class="panel">
+                <p>Six heroes, six issues, and three chances: lose a fight and the city's hope drops. At zero, the series is cancelled.</p>
+                @if (AtLarge.Count > 0)
+                {
+                    <p><b>@AtLarge.Count @(AtLarge.Count == 1 ? "villain is" : "villains are")</b> still out there from earlier series: @string.Join(", ", AtLarge.Take(4).Select(v => v.Name))@(AtLarge.Count > 4 ? "…" : ""). They've had time to think about you.</p>
+                }
+                @if (Jailed.Count > 0)
+                {
+                    <p>@Jailed.Count in @Rivalry.Prison. Prisons have been known to leak.</p>
+                }
+                <label class="field">Team name
+                    <input @bind="teamName" @bind:event="oninput" maxlength="28" placeholder="@namePlaceholder" />
+                </label>
+                <div class="row">
+                    <button class="btn primary big" @onclick="() => G.NewSeries(string.IsNullOrWhiteSpace(teamName) ? namePlaceholder : teamName)">Print issue #1</button>
+                    <button class="btn ghost" @onclick="() => G.Go(Screen.Title)">Back</button>
+                </div>
+            </div>
+        </section>
+        break;
+
+    case Screen.Issue:
+        var plan = G.S.Next;
+        var bosses = plan.VillainIds.Select(G.Villain).ToList();
+        <section class="page issue">
+            <div class="issue-cover">
+                <Cover Rec="G.PendingCover()" Find="G.Villain" />
+            </div>
+            <div class="issue-side">
+                <Status />
+                @foreach (var b in plan.Breakouts.Select(G.Villain))
+                {
+                    <div class="alert">BREAKOUT! @b.Name is out of @Rivalry.Prison.</div>
+                }
+                <div class="speech">
+                    <b>@bosses[0].Name:</b> “@plan.Intro”
+                </div>
+                @foreach (var v in bosses)
+                {
+                    <VillainFile V="v" Compact="true" />
+                }
+                <p class="small">With @plan.Henchmen.Count henchmen (@string.Join(", ", plan.Henchmen.GroupBy(h => h).Select(g => $"{g.Count()} {Plural(Content.Henchmen[g.Key].Name.ToLowerInvariant(), g.Count())}"))), at @Campaign.PlaceOf(plan).Name.</p>
+                <div class="row">
+                    <button class="btn primary big" @onclick="G.Assemble">Assemble the team →</button>
+                    <button class="btn ghost" @onclick="() => G.Go(Screen.Gallery)">Gallery</button>
+                    <button class="btn ghost" @onclick="() => G.Go(Screen.Title)">Title</button>
+                </div>
+            </div>
+        </section>
+        break;
+
+    case Screen.Team:
+        var foes = G.S.Next.VillainIds.Select(G.Villain).ToList();
+        <section class="page">
+            <h2 class="page-title">Who goes in? <small>Pick @Campaign.TeamSize</small></h2>
+            <div class="roster">
+                @foreach (var h in G.S.Roster)
+                {
+                    var a = Content.Archetypes[h.Archetype];
+                    var fit = GameState.Fit(h, foes);
+                    var hunted = foes.FirstOrDefault(v => v.GrudgeHeroId == h.Id);
+                    var on = G.Picked.Contains(h.Id);
+                    <button class="hero-card @(on ? "on" : "") @(h.Injured > 0 ? "injured" : "")" disabled="@(h.Injured > 0)" @onclick="() => G.Toggle(h.Id)">
+                        <Figure Look="h.Look" />
+                        <span class="hc-name">@h.Name <small>lv @h.Level</small></span>
+                        <span class="hc-kind">@a.Name · @(a.Hp + h.BonusHp + h.Level - 1) health · move @(a.Move + h.BonusMove)</span>
+                        <span class="hc-tag">@h.Tagline</span>
+                        <span class="hc-powers">@string.Join(" · ", a.Powers.Select(p => Content.Powers[p].Name))</span>
+                        @if (h.Upgrades.Count > 0)
+                        {
+                            <span class="hc-ups">@string.Join(", ", h.Upgrades.Select(u => Content.Upgrades.First(x => x.Id == u).Name))</span>
+                        }
+                        @if (h.Injured > 0)
+                        {
+                            <span class="hc-note bad">Injured: back in @h.Injured @(h.Injured == 1 ? "issue" : "issues")</span>
+                        }
+                        else if (hunted != null)
+                        {
+                            <span class="hc-note bad">@hunted.Name has a grudge against @h.Name</span>
+                        }
+                        else if (fit > 0)
+                        {
+                            <span class="hc-note good">Hits them where it hurts</span>
+                        }
+                        else if (fit < 0)
+                        {
+                            <span class="hc-note bad">They're ready for this one</span>
+                        }
+                    </button>
+                }
+            </div>
+            <div class="row sticky">
+                <button class="btn primary big" disabled="@(G.Picked.Count == 0)" @onclick="G.StartFight">Fight! (@G.Picked.Count/@Campaign.TeamSize)</button>
+                <button class="btn ghost" @onclick="() => G.Go(Screen.Issue)">Back to the cover</button>
+            </div>
+        </section>
+        break;
+
+    case Screen.Battle:
+        @if (G.Battle != null)
+        {
+            <BattleView B="G.Battle" />
+        }
+        break;
+
+    case Screen.Aftermath:
+        var last = G.U.Covers.LastOrDefault();
+        <section class="page aftermath">
+            @if (last != null)
+            {
+                var (word, col) = Cover.Stamp(last.Outcome);
+                <div class="issue-cover small-cover">
+                    <Cover Rec="last" Find="G.Villain" />
+                    <button class="btn ghost" @onclick="() => Download(last)">Save cover as PNG</button>
+                </div>
+                <div class="issue-side">
+                    <h2 class="stamp-title" style="--stamp:@col">@word</h2>
+                    <Status />
+                    <div class="notes">
+                        @foreach (var n in G.S.LastNotes)
+                        {
+                            <div class="note n-@n.Kind">@n.Text</div>
+                        }
+                    </div>
+                    @if (G.S.Offers.Count > 0)
+                    {
+                        <h3 class="sub">Between issues: train one hero</h3>
+                        <div class="offers">
+                            @for (int i = 0; i < G.S.Offers.Count; i++)
+                            {
+                                var idx = i;
+                                var o = G.S.Offers[i];
+                                var up = Content.Upgrades.First(x => x.Id == o.UpgradeId);
+                                <button class="offer" @onclick="() => G.TakeUpgrade(idx)">
+                                    <Figure Look="GameState.HeroLook(o.HeroId)" />
+                                    <b>@GameState.HeroName(o.HeroId): @up.Name</b>
+                                    <span>@up.Text</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                    <div class="row">
+                        <button class="btn primary big" @onclick="G.NextIssue">@(G.S.Over ? "How did the series end? →" : G.S.Offers.Count > 0 ? "Skip training, next issue →" : "Next issue →")</button>
+                        <button class="btn ghost" @onclick="() => G.Go(Screen.Gallery)">Gallery</button>
+                    </div>
+                </div>
+            }
+        </section>
+        break;
+
+    case Screen.SeriesEnd:
+        var mine = G.U.Covers.Where(c => c.Series == G.S.Number).ToList();
+        <section class="page">
+            <h2 class="page-title big-end">@(G.S.Won ? "THE END… FOR NOW" : "CANCELLED!")</h2>
+            <div class="panel">
+                <p>@(G.S.Won ? $"{G.S.TeamName} made it through all {Campaign.IssuesPerSeries} issues with {G.S.Hope} hope to spare." : $"The city gave up on {G.S.TeamName} after issue #{G.S.Issue - 1}.")
+                   Score <b>@G.S.Score</b> · best <b>@G.U.BestScore</b>.</p>
+                <p>@AtLarge.Count @(AtLarge.Count == 1 ? "villain is" : "villains are") still at large and @Jailed.Count in @Rivalry.Prison. They'll be there when the next series starts.</p>
+                <div class="row">
+                    <button class="btn primary big" @onclick="() => G.Go(Screen.NewSeries)">Start the next series</button>
+                    <button class="btn" @onclick="() => G.Go(Screen.Gallery)">Rogues gallery</button>
+                    <button class="btn ghost" @onclick="() => G.Go(Screen.Title)">Title</button>
+                </div>
+            </div>
+            <div class="cover-grid">
+                @foreach (var c in mine)
+                {
+                    <div class="cover-cell"><Cover Rec="c" Find="G.Villain" /></div>
+                }
+            </div>
+        </section>
+        break;
+
+    case Screen.Gallery:
+        <section class="page">
+            <h2 class="page-title">Rogues gallery <small>@G.U.Gallery.Count villains, most dangerous first</small></h2>
+            <div class="row filters">
+                @foreach (var f in new[] { "all", "at large", "in the vault" })
+                {
+                    var ff = f;
+                    <button class="chip @(galleryFilter == f ? "on" : "")" @onclick="() => galleryFilter = ff">@f</button>
+                }
+                <button class="btn ghost" @onclick="G.Return">← Back</button>
+            </div>
+            <div class="gallery">
+                @foreach (var v in G.U.Gallery.Where(InFilter).OrderByDescending(v => v.Status == VillainStatus.AtLarge).ThenByDescending(v => v.Threat))
+                {
+                    <VillainFile V="v" />
+                }
+            </div>
+        </section>
+        break;
+
+    case Screen.Covers:
+        <section class="page">
+            <h2 class="page-title">Every issue so far <small>@G.U.Covers.Count covers</small></h2>
+            <div class="row"><button class="btn ghost" @onclick="G.Return">← Back</button></div>
+            <div class="cover-grid">
+                @foreach (var c in G.U.Covers.AsEnumerable().Reverse())
+                {
+                    <div class="cover-cell">
+                        <Cover Rec="c" Find="G.Villain" />
+                        <button class="btn ghost small" @onclick="() => Download(c)">PNG</button>
+                    </div>
+                }
+            </div>
+        </section>
+        break;
+
+    case Screen.Help:
+        <section class="page narrow help">
+            <h2 class="page-title">How to play</h2>
+            <div class="panel">
+                <h3>The series</h3>
+                <p>Each series is six issues. Every issue is one fight against a villain and their henchmen. Pick three heroes from your roster of six. Lose a fight and the city's hope drops; at zero hope the series is cancelled.</p>
+                <h3>The fight</h3>
+                <p>Each round, every hero can move once and act once, in either order. Click a hero, click a blue square to move, or pick a power and click a red target. Walls block movement and sight. Crates give cover: ranged attacks from more than a square away do 1 less. Barrels explode.</p>
+                <p>Every hit builds <b>momentum</b> (the yellow pips). Three momentum pays for a <b>signature</b> move. Two heroes standing side by side who haven't acted can <b>team up</b> on one target.</p>
+                <p>Capture the villain to win. At 30% health or less a villain will try to run, unless they are <b>stunned</b> or <b>tagged</b>. Patchwork's taser and Vesper's hex bolt tag. After ten rounds the villain gets away anyway.</p>
+                <h3>The nemesis system</h3>
+                <p>Villains are never forgotten. One who escapes or beats you comes back later, and comes back changed:</p>
+                <ul>
+                    <li>They <b>adapt</b>: whatever damaged them most, they now resist, and the matching weakness is gone.</li>
+                    <li>They hold a <b>grudge</b> against the hero who hurt them most and hit that hero harder.</li>
+                    <li>They <b>scar</b>, rise in <b>rank</b>, and get tougher every time they return.</li>
+                    <li>Captured villains go to @Rivalry.Prison. Prisons leak. A breakout makes them meaner.</li>
+                    <li>A nameless henchman who knocks out a hero gets <b>promoted</b>: a name, an epithet, and a grudge.</li>
+                </ul>
+                <p>The finale brings back your worst nemesis. The rogues gallery and every cover carry over between series.</p>
+                <h3>Keys</h3>
+                <p><b>1 2 3</b> pick a power · <b>Tab</b> next hero · <b>E</b> end turn · <b>Esc</b> cancel · click during a replay to skip it.</p>
+                <div class="row"><button class="btn primary" @onclick="G.Return">Got it</button></div>
+            </div>
+        </section>
+        break;
+}
+</div>
+
+@code {
+    string teamName;
+    string namePlaceholder = Content.TeamNames[DateTime.UtcNow.Second % Content.TeamNames.Length];
+    bool confirmWipe;
+    string galleryFilter = "all";
+    List<Villain> sampleRogues;
+
+    List<Villain> AtLarge => G.U.Gallery.Where(v => v.Status == VillainStatus.AtLarge).ToList();
+    List<Villain> Jailed => G.U.Gallery.Where(v => v.Status == VillainStatus.Captured).ToList();
+
+    bool InFilter(Villain v) => galleryFilter switch
+    {
+        "at large" => v.Status == VillainStatus.AtLarge,
+        "in the vault" => v.Status == VillainStatus.Captured,
+        _ => true,
+    };
+
+    /// <summary>The title shows your own worst villains, or a few strangers if you haven't met any yet.</summary>
+    IEnumerable<Villain> TitleRogues
+    {
+        get
+        {
+            var known = G.U.Gallery.OrderByDescending(v => v.Threat).Take(5).ToList();
+            if (known.Count >= 3) return known;
+            if (sampleRogues == null)
+            {
+                var rng = new Rng((ulong)DateTime.UtcNow.Ticks);
+                var list = new List<Villain>();
+                foreach (var a in Content.VillainArchetypes.OrderBy(_ => rng.NextU64()).Take(5)) list.Add(Rivalry.Create(rng, list, 0, 1, a));
+                sampleRogues = list;
+            }
+            return sampleRogues;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        G.Changed += Refresh;
+        await G.Load();
+    }
+
+    void Refresh() => InvokeAsync(StateHasChanged);
+    public void Dispose() => G.Changed -= Refresh;
+
+    static string Plural(string word, int n) => n == 1 ? word : word.EndsWith("man") ? word.Substring(0, word.Length - 3) + "men" : word + "s";
+
+    async Task Download(IssueRecord c)
+    {
+        var name = $"nemesis-s{c.Series}-{c.Number:00}-{new string((c.Title ?? "cover").ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray()).Trim('-')}.png";
+        await JS.InvokeVoidAsync("nemesis.downloadCover", $"cover-{c.Series}-{c.Number}", name);
+    }
+}

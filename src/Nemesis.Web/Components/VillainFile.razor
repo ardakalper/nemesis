@@ -1,0 +1,60 @@
+@* A villain's file: who they are, what they've become, and everything that happened between them and the team. *@
+<article class="vfile @(Compact ? "compact" : "") status-@V.Status.ToString().ToLowerInvariant()">
+    <div class="vf-portrait">
+        <Figure Look="V.Look" Villain="true" Scars="V.Scars.Count" />
+        <span class="vf-status">@StatusText</span>
+    </div>
+    <div class="vf-body">
+        <h3>@V.Name @if (!string.IsNullOrEmpty(V.Epithet)) { <small>@V.Epithet</small> }</h3>
+        <p class="vf-meta">@RankWord · @Content.Archetypes[V.Archetype].Name · threat <b>@V.Threat</b></p>
+        <div class="vf-threat"><i style="width:@(Math.Min(100, V.Threat * 4))%"></i></div>
+        <p class="vf-origin"><b>@V.RealName.</b> @V.Origin</p>
+        @if (V.Traits.Count > 0 || V.GrudgeHeroId != null || V.Scars.Count > 0)
+        {
+            <ul class="vf-traits">
+                @foreach (var t in V.Traits.Select(x => Content.Traits[x]))
+                {
+                    <li class="@(t.Weak.HasValue ? "weak" : "strong")" title="@t.Text"><b>@t.Name</b> <span>@t.Text</span></li>
+                }
+                @if (V.GrudgeHeroId != null)
+                {
+                    <li class="grudge"><b>Grudge</b> <span>Wants @GameState.HeroName(V.GrudgeHeroId). Hits them for 2 more.</span></li>
+                }
+                @foreach (var s in V.Scars)
+                {
+                    <li class="scar"><b>Scar</b> <span>@s</span></li>
+                }
+            </ul>
+        }
+        <p class="vf-record">@N(V.Encounters, "fight") · @N(V.Escapes, "escape") · @N(V.Captures, "capture") · @N(V.HeroKOs, "hero", "heroes") floored @(V.Wins > 0 ? $"· beat you {V.Wins}×" : "")</p>
+        @if (!Compact && V.History.Count > 0)
+        {
+            <ol class="vf-history">
+                @foreach (var h in V.History)
+                {
+                    <li class="h-@h.Kind"><span class="h-when">S@(h.Series) #@h.Issue</span> @h.Text</li>
+                }
+            </ol>
+        }
+        else if (Compact && V.History.Count > 1)
+        {
+            <p class="vf-last">Last time: @V.History.Last().Text</p>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter] public Villain V { get; set; }
+    [Parameter] public bool Compact { get; set; }
+
+    string StatusText => V.Status switch
+    {
+        VillainStatus.Captured => "IN " + Rivalry.Prison.ToUpperInvariant(),
+        VillainStatus.Retired => "RETIRED",
+        _ => "AT LARGE",
+    };
+
+    static string N(int n, string one, string many = null) => $"{n} {(n == 1 ? one : many ?? one + "s")}";
+
+    string RankWord => V.Rank >= 3 ? "Archvillain" : V.Rank == 2 ? "Supervillain" : "Lieutenant";
+}

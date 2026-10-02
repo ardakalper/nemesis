@@ -1,0 +1,241 @@
+@* A head-and-shoulders portrait drawn from a Look: the same few shapes, recombined, make every hero, villain and goon. *@
+<svg viewBox="0 0 100 100" class="figure @Class" @attributes="Attrs">
+    @if (Turret)
+    {
+        <g stroke="#111" stroke-width="3" stroke-linejoin="round">
+            <path d="M50 70 L28 98 M50 70 L72 98 M50 70 L50 98" fill="none" />
+            <rect x="30" y="38" width="40" height="32" rx="6" fill="@L.Primary" />
+            <rect x="66" y="47" width="28" height="9" fill="@L.Secondary" />
+            <circle cx="44" cy="54" r="7" fill="#9ad1ff" />
+            <path d="M34 38 L40 26 L60 26 L66 38" fill="@L.Secondary" />
+        </g>
+    }
+    else
+    {
+        <g stroke="#111" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+            @if (L.Cape)
+            {
+                <path d="M24 64 L6 100 L94 100 L76 64 Z" fill="@Shade(L.Secondary)" />
+            }
+            @if (L.Mask == 5)
+            {
+                <path d="M26 48 C24 12 76 12 74 48 L80 72 L20 72 Z" fill="@Shade(L.Primary)" />
+            }
+            @if (L.Hair == 4 && !Covered)
+            {
+                <path d="M30 40 C28 14 72 14 70 40 L75 66 L60 62 L58 50 L42 50 L40 62 L25 66 Z" fill="#231815" />
+            }
+            <path d="M12 100 C12 80 23 69 38 66 L62 66 C77 69 88 80 88 100 Z" fill="@L.Primary" />
+            <path d="M62 66 C77 69 88 80 88 100 L68 100 C70 86 68 74 62 66 Z" fill="#111" fill-opacity=".2" stroke="none" />
+            <path d="M38 66 L50 78 L62 66" fill="none" stroke="@L.Secondary" stroke-width="4" />
+            @Emblem()
+            <path d="M42 54 L42 68 Q50 73 58 68 L58 54 Z" fill="@L.Skin" />
+            @if (!Covered)
+            {
+                <ellipse cx="33" cy="42" rx="4" ry="6" fill="@L.Skin" />
+                <ellipse cx="67" cy="42" rx="4" ry="6" fill="@L.Skin" />
+            }
+            <ellipse cx="50" cy="40" rx="17" ry="20" fill="@(L.Mask == 3 ? L.Primary : L.Skin)" />
+            <path d="M58 22 C70 28 70 52 56 60 C64 50 66 34 58 22 Z" fill="#111" fill-opacity=".16" stroke="none" />
+            @if (Hench)
+            {
+                <path d="M32 34 C32 14 68 14 68 34 Z" fill="#2b2b2b" />
+                <path d="M31 34 L69 34" stroke-width="5" />
+            }
+            else if (!Covered)
+            {
+                @Hair()
+            }
+            @Mask()
+            @if (L.Mask != 3 && L.Mask != 4)
+            {
+                @Eyes()
+            }
+            @if (L.Mask != 3)
+            {
+                <path d="@(Villain ? "M38 31 L47 36.5 M53 36.5 L62 31" : "M38 34 L47 35 M53 35 L62 34")" fill="none" stroke-width="3" />
+                @Mouth()
+            }
+            @if (Scars > 0)
+            {
+                <path d="M38 44 L45 54 M39 48 L42 46 M41 51 L44 49" fill="none" stroke="#7a1010" stroke-width="2" />
+            }
+            @Extra()
+        </g>
+    }
+</svg>
+
+@code {
+    [Parameter] public Look Look { get; set; }
+    [Parameter] public bool Villain { get; set; }
+    [Parameter] public bool Hench { get; set; }
+    [Parameter] public bool Turret { get; set; }
+    [Parameter] public int Scars { get; set; }
+    [Parameter] public string Class { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attrs { get; set; }
+
+    Look L => Look ?? new Look();
+    bool Covered => L.Mask == 2 || L.Mask == 3 || L.Mask == 5;
+
+    /// <summary>A darker version of a colour for capes and hoods.</summary>
+    public static string Shade(string hex, double k = 0.72)
+    {
+        if (string.IsNullOrEmpty(hex) || hex.Length != 7) return hex;
+        int r = Convert.ToInt32(hex.Substring(1, 2), 16), g = Convert.ToInt32(hex.Substring(3, 2), 16), b = Convert.ToInt32(hex.Substring(5, 2), 16);
+        return $"#{(int)(r * k):x2}{(int)(g * k):x2}{(int)(b * k):x2}";
+    }
+
+    RenderFragment Emblem() => __builder =>
+    {
+        var c = L.Secondary;
+        switch (((L.Emblem % 8) + 8) % 8)
+        {
+            case 0:
+                <path d="M41 80 L50 76 L59 80 L57 92 L50 97 L43 92 Z" fill="@c" stroke-width="2" />
+                break;
+            case 1:
+                <path d="M53 75 L43 88 L50 88 L46 98 L58 84 L51 84 Z" fill="@c" stroke-width="2" />
+                break;
+            case 2:
+                <circle cx="50" cy="87" r="6" fill="@c" stroke-width="2" />
+                <path d="M50 76 L50 79 M50 95 L50 98 M39 87 L42 87 M58 87 L61 87 M42 79 L44 81 M56 93 L58 95 M58 79 L56 81 M42 95 L44 93" stroke="@c" stroke-width="2.5" />
+                break;
+            case 3:
+                <path d="M39 87 Q50 77 61 87 Q50 97 39 87 Z" fill="@c" stroke-width="2" />
+                <circle cx="50" cy="87" r="3" fill="#111" stroke="none" />
+                break;
+            case 4:
+                <circle cx="50" cy="87" r="8" fill="@c" stroke-width="2" stroke-dasharray="4 2.3" />
+                <circle cx="50" cy="87" r="3" fill="@L.Primary" stroke-width="2" />
+                break;
+            case 5:
+                <path d="M54 77 A10 10 0 1 0 54 97 A7.5 7.5 0 1 1 54 77 Z" fill="@c" stroke-width="2" />
+                break;
+            case 6:
+                <path d="M50 76 L58 87 L50 98 L42 87 Z" fill="@c" stroke-width="2" />
+                break;
+            default:
+                <path d="M42 79 L48 95 M50 78 L54 96 M58 79 L58 94" stroke="@c" stroke-width="3.5" />
+                break;
+        }
+    };
+
+    RenderFragment Hair() => __builder =>
+    {
+        switch (L.Hair)
+        {
+            case 1:
+                <path d="M33 36 L29 24 L38 27 L39 15 L46 23 L52 12 L56 23 L64 16 L63 27 L71 25 L67 36 Q50 26 33 36 Z" fill="#231815" />
+                break;
+            case 2:
+                <path d="M33 34 L33 19 L67 19 L67 34 Q50 27 33 34 Z" fill="#231815" />
+                break;
+            case 3:
+                <path d="M32 38 C30 17 57 11 71 24 C63 22 59 26 67 35 Q50 24 32 38 Z" fill="#231815" />
+                break;
+            case 4:
+                <path d="M33 35 C34 21 66 21 67 35 Q58 26 50 30 Q42 26 33 35 Z" fill="#231815" />
+                break;
+        }
+    };
+
+    RenderFragment Mask() => __builder =>
+    {
+        var m = Hench ? "#111" : L.Secondary;
+        switch (L.Mask)
+        {
+            case 1:
+                <path d="M32 35 Q50 30 68 35 L66 45 Q58 47 50 43 Q42 47 34 45 Z" fill="@m" />
+                break;
+            case 2:
+                <path d="M32 46 C29 13 71 13 68 46 L68 50 Q60 45 57 51 L43 51 Q40 45 32 50 Z" fill="@L.Primary" />
+                <path d="M34 22 L31 8 L42 18 M66 22 L69 8 L58 18" fill="@L.Primary" />
+                break;
+            case 3:
+                <path d="M35 36 L65 36 L62 44 L38 44 Z" fill="@L.Secondary" />
+                <path d="M42 51 L58 51 M44 55 L56 55" fill="none" stroke-width="2" />
+                <path d="M50 20 L50 30" fill="none" stroke="@L.Secondary" stroke-width="4" />
+                break;
+            case 4:
+                <path d="M30 34 L70 34 L68 45 L32 45 Z" fill="@L.Secondary" />
+                <path d="M36 37 L50 37" fill="none" stroke="#fff" stroke-width="2" stroke-opacity=".8" />
+                break;
+            case 5:
+                <path d="M31 50 C29 16 71 16 69 50 C67 30 60 24 50 24 C40 24 33 30 31 50 Z" fill="@Shade(L.Primary)" />
+                <path d="M34 34 Q50 28 66 34 L66 44 Q50 40 34 44 Z" fill="#111" fill-opacity=".35" stroke="none" />
+                break;
+        }
+    };
+
+    RenderFragment Eyes() => __builder =>
+    {
+        if (L.Mask == 5)
+        {
+            <ellipse cx="43" cy="40" rx="4" ry="2.2" fill="@L.Secondary" stroke-width="1.5" />
+            <ellipse cx="57" cy="40" rx="4" ry="2.2" fill="@L.Secondary" stroke-width="1.5" />
+        }
+        else if (L.Mask == 1 || L.Mask == 2)
+        {
+            <path d="M39 41 Q43 37 47 41 Q43 42.5 39 41 Z" fill="#fff" stroke-width="1.5" />
+            <path d="M53 41 Q57 37 61 41 Q57 42.5 53 41 Z" fill="#fff" stroke-width="1.5" />
+        }
+        else
+        {
+            <ellipse cx="43" cy="40" rx="4" ry="2.6" fill="#fff" stroke-width="1.5" />
+            <ellipse cx="57" cy="40" rx="4" ry="2.6" fill="#fff" stroke-width="1.5" />
+            <circle cx="@(Villain ? 44 : 43)" cy="40" r="1.6" fill="#111" stroke="none" />
+            <circle cx="@(Villain ? 56 : 57)" cy="40" r="1.6" fill="#111" stroke="none" />
+        }
+    };
+
+    RenderFragment Mouth() => __builder =>
+    {
+        if (Hench)
+        {
+            <path d="M44 53 L56 52" fill="none" stroke-width="2.5" />
+        }
+        else if (Villain)
+        {
+            <path d="M41 50 Q50 58 59 50 Q50 53 41 50 Z" fill="#fff" stroke-width="2" />
+            <path d="M45 51.5 L45 54 M50 52 L50 55 M55 51.5 L55 54" fill="none" stroke-width="1.2" />
+        }
+        else
+        {
+            <path d="M44 52 Q50 55 56 52" fill="none" stroke-width="2.5" />
+        }
+    };
+
+    RenderFragment Extra() => __builder =>
+    {
+        switch (L.Extra)
+        {
+            case 1:
+                <path d="M35 27 Q25 15 30 4 Q35 15 43 21 Z M65 27 Q75 15 70 4 Q65 15 57 21 Z" fill="@L.Secondary" stroke-width="2.5" />
+                break;
+            case 2:
+                <circle cx="57" cy="40" r="6" fill="#e2231a" fill-opacity=".85" stroke-width="2.5" />
+                <path d="M63 40 L68 41" fill="none" stroke-width="2.5" />
+                break;
+            case 3:
+                <path d="M31 34 C30 5 70 5 69 34 Z" fill="#bfe6ff" fill-opacity=".55" stroke-width="2.5" />
+                <path d="M38 28 Q42 18 48 24 Q52 14 58 22 Q64 20 62 29" fill="none" stroke="#e6007e" stroke-width="2" />
+                break;
+            case 4:
+                <path d="M32 30 L30 12 L38 20 L42 4 L48 18 L54 2 L58 18 L64 8 L66 22 L70 14 L68 30 Q50 22 32 30 Z" fill="#ffde17" stroke-width="2.5" />
+                <path d="M40 26 L42 16 L46 22 L52 10 L55 22 L60 16 L60 26 Z" fill="#e2231a" stroke="none" />
+                break;
+            case 5:
+                <path d="M34 24 L36 8 L42 20 L50 2 L58 20 L64 8 L66 24 Q50 18 34 24 Z" fill="#cdefff" stroke-width="2.5" />
+                break;
+            case 6:
+                <path d="M22 30 L30 36 L24 40 L33 47 M78 30 L70 36 L76 40 L67 47" fill="none" stroke="#ffde17" stroke-width="3.5" />
+                break;
+            case 7:
+                <path d="M34 26 Q22 18 16 26 Q24 14 40 20 Z M66 26 Q78 18 84 26 Q76 14 60 20 Z M44 21 Q50 4 56 21 Z" fill="@L.Secondary" stroke-width="2.5" />
+                <circle cx="16" cy="27" r="3" fill="#ffde17" stroke-width="1.5" />
+                <circle cx="84" cy="27" r="3" fill="#ffde17" stroke-width="1.5" />
+                <circle cx="50" cy="5" r="3" fill="#ffde17" stroke-width="1.5" />
+                break;
+        }
+    };
+}

@@ -1,0 +1,12 @@
+@* Where the series stands: issue, hope, score. *@
+@inject GameState G
+
+@if (G.S != null)
+{
+    <div class="status">
+        <span class="st-team">@G.S.TeamName</span>
+        <span>Vol. @G.S.Number · issue @Math.Min(G.S.Issue, Campaign.IssuesPerSeries)/@Campaign.IssuesPerSeries</span>
+        <span class="st-hope" title="Lose a fight and hope drops. At zero, the series is cancelled.">hope @for (int i = 0; i < 3; i++) { <b class="@(i < G.S.Hope ? "on" : "")"></b> }</span>
+        <span>score @G.S.Score</span>
+    </div>
+}

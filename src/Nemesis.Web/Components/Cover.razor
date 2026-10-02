@@ -1,0 +1,135 @@
+@* A comic cover for an issue, drawn from its record: masthead, corner box, the villain, the team, the blurb and, once it's over, the stamp. *@
+<svg viewBox="0 0 400 600" class="cover @Class" id="@Id" xmlns="http://www.w3.org/2000/svg" font-family="Bangers, Impact, sans-serif">
+    <rect width="400" height="600" fill="@Bg" />
+    <g fill="#111" fill-opacity=".14">
+        @for (int i = 0; i < 18; i++)
+        {
+            var a1 = i * Math.PI * 2 / 18; var a2 = a1 + Math.PI / 18;
+            <path d="M200 300 L@(F(200 + 700 * Math.Cos(a1))) @(F(300 + 700 * Math.Sin(a1))) L@(F(200 + 700 * Math.Cos(a2))) @(F(300 + 700 * Math.Sin(a2))) Z" />
+        }
+    </g>
+    <rect width="400" height="600" fill="url(#ht-dots)" opacity=".22" />
+
+    @* the villains *@
+    @if (Villains.Count > 1)
+    {
+        <Figure Look="Villains[1].Look" Villain="true" Scars="Villains[1].Scars.Count" x="170" y="140" width="250" height="250" />
+        <Figure Look="Villains[0].Look" Villain="true" Scars="Villains[0].Scars.Count" x="-10" y="150" width="270" height="270" />
+    }
+    else if (Villains.Count == 1)
+    {
+        <Figure Look="Villains[0].Look" Villain="true" Scars="Villains[0].Scars.Count" x="45" y="120" width="310" height="310" />
+    }
+
+    @* masthead *@
+    <rect x="0" y="0" width="400" height="92" fill="#f4ecd8" />
+    <rect x="0" y="0" width="400" height="92" fill="url(#ht-dots)" opacity=".12" />
+    <text x="252" y="76" text-anchor="middle" font-size="82" fill="@Mast" stroke="#111" stroke-width="5" paint-order="stroke" letter-spacing="2">NEMESIS</text>
+    <rect x="0" y="92" width="400" height="26" fill="#111" />
+    <text x="120" y="111" font-size="17" fill="#ffde17" letter-spacing="1">STARRING @Rec.TeamName.ToUpperInvariant()</text>
+
+    @* corner box *@
+    <rect x="8" y="8" width="100" height="118" fill="#fff" stroke="#111" stroke-width="4" />
+    <text x="16" y="38" font-size="30" fill="#111">#@Rec.Number</text>
+    <text x="100" y="24" text-anchor="end" font-size="12" fill="#111">VOL. @Rec.Series</text>
+    <text x="100" y="38" text-anchor="end" font-size="12" fill="#e2231a">FREE</text>
+    @if (Heroes.Count > 0)
+    {
+        <Figure Look="Heroes[0]" x="20" y="42" width="80" height="80" />
+    }
+    <path d="M8 126 L108 126" stroke="#111" stroke-width="4" />
+
+    @* blurb starburst *@
+    <g transform="translate(318 196) rotate(8)">
+        <path d="@Burst(0, 0, 76, 56, 16)" fill="#ffde17" stroke="#111" stroke-width="4" stroke-linejoin="round" />
+        @{ var blurb = Wrap(Rec.Headline ?? "", 13).Take(5).ToList(); }
+        @for (int i = 0; i < blurb.Count; i++)
+        {
+            <g><text x="0" y="@(F(-(blurb.Count - 1) * 8 + i * 16 + 5))" text-anchor="middle" font-size="15" fill="#111">@blurb[i]</text></g>
+        }
+    </g>
+
+    @* title banner *@
+    @{ var title = Wrap(Rec.Title ?? "", 20).Take(3).ToList(); int tsize = title.Count > 2 ? 26 : 32; double th = title.Count * (tsize + 4) + 20; }
+    <g transform="translate(200 @(F(452 - th / 2))) rotate(-4)">
+        <rect x="-188" y="0" width="376" height="@F(th)" fill="#fff" stroke="#111" stroke-width="5" />
+        @for (int i = 0; i < title.Count; i++)
+        {
+            <g><text x="0" y="@(F(14 + (i + 1) * (tsize + 4) - 6))" text-anchor="middle" font-size="@tsize" fill="#111" letter-spacing="1">@title[i]</text></g>
+        }
+    </g>
+
+    @* the team *@
+    @for (int i = 0; i < Heroes.Count && i < 3; i++)
+    {
+        <Figure Look="Heroes[i]" x="@(i * 82 - 4)" y="@(498 - (i % 2) * 6)" width="108" height="108" />
+    }
+
+    @* place and barcode *@
+    <rect x="270" y="512" width="122" height="80" fill="#fff" stroke="#111" stroke-width="3" />
+    <text x="331" y="530" text-anchor="middle" font-size="12" fill="#111">@PlaceLine</text>
+    @for (int i = 0; i < 26; i++)
+    {
+        var bit = ((uint)Rec.Seed >> (i % 31)) & 1;
+        <rect x="@(280 + i * 4)" y="538" width="@(bit == 1 ? 3 : 1.5)" height="42" fill="#111" />
+    }
+    <text x="331" y="590" text-anchor="middle" font-size="9" fill="#111" font-family="monospace">@($"{Rec.Series:00}{Rec.Number:00}{(uint)Rec.Seed % 100000:00000}")</text>
+
+    @* the outcome stamp *@
+    @if (!string.IsNullOrEmpty(Rec.Outcome))
+    {
+        var (word, col) = Stamp(Rec.Outcome);
+        <g transform="translate(200 300) rotate(-14)" opacity=".92">
+            <rect x="-150" y="-40" width="300" height="80" fill="#f4ecd8" fill-opacity=".85" stroke="@col" stroke-width="7" />
+            <rect x="-141" y="-31" width="282" height="62" fill="none" stroke="@col" stroke-width="2.5" />
+            <text x="0" y="20" text-anchor="middle" font-size="54" fill="@col" letter-spacing="3">@word</text>
+        </g>
+    }
+    <rect x="2" y="2" width="396" height="596" fill="none" stroke="#111" stroke-width="4" />
+</svg>
+
+@code {
+    [Parameter] public IssueRecord Rec { get; set; }
+    [Parameter] public Func<string, Villain> Find { get; set; }
+    [Parameter] public string Class { get; set; }
+
+    string Id => $"cover-{Rec.Series}-{Rec.Number}";
+    List<Villain> Villains => Rec.VillainIds.Select(id => Find?.Invoke(id)).Where(v => v != null).ToList();
+    List<Look> Heroes => Rec.HeroIds.Select(GameState.HeroLook).ToList();
+
+    static readonly string[] Backgrounds = { "#00a6d6", "#e6007e", "#ffde17", "#1c5bb8", "#e2231a", "#7cc242" };
+    string Bg => Backgrounds[(int)((uint)Rec.Seed % (uint)Backgrounds.Length)];
+    string Mast => Bg == "#e2231a" ? "#ffde17" : "#e2231a";
+    string PlaceLine => (Rec.Place ?? "").Replace("the ", "").ToUpperInvariant();
+
+    public static (string, string) Stamp(string outcome) => outcome switch
+    {
+        "captured" => ("CAPTURED!", "#1c5bb8"),
+        "escaped" => ("GOT AWAY!", "#e6007e"),
+        _ => ("DEFEATED", "#e2231a"),
+    };
+
+    static string F(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    public static string Burst(double cx, double cy, double r1, double r2, int points)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < points * 2; i++)
+        {
+            double a = i * Math.PI / points, r = i % 2 == 0 ? r1 : r2;
+            sb.Append(i == 0 ? "M" : "L").Append(F(cx + r * Math.Cos(a))).Append(' ').Append(F(cy + r * Math.Sin(a))).Append(' ');
+        }
+        return sb.Append('Z').ToString();
+    }
+
+    public static IEnumerable<string> Wrap(string text, int width)
+    {
+        var line = "";
+        foreach (var w in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (line.Length > 0 && line.Length + 1 + w.Length > width) { yield return line; line = w; }
+            else line = line.Length == 0 ? w : line + " " + w;
+        }
+        if (line.Length > 0) yield return line;
+    }
+}
